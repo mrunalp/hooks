@@ -312,7 +312,8 @@ int main(int argc, char *argv[])
 	}
 	char *cmd = YAJL_GET_STRING(v_cmd);
 
-	if (strcmp("/sbin/init", cmd)) {
+	char *cmd_file_name = basename(cmd);
+	if (strcmp("init", cmd_file_name) && strcmp("systemd", cmd_file_name)) {
 		fprintf(stdout, "Skipping as container command is %s, not /sbin/init\n", cmd);
 		goto success;
 	}
