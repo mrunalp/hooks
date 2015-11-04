@@ -304,7 +304,19 @@ int main(int argc, char *argv[])
 	}
 	char *mount_label = YAJL_GET_STRING(v_mount);
 
-	fprintf(stdout, "Mount Label parsed as: %s", mount_label);
+	const char *cmd_path[] = { "Path", (const char *)0 };
+	yajl_val v_cmd = yajl_tree_get(config_node, cmd_path, yajl_t_string);
+	if (!v_cmd) {
+		fprintf(stderr, "Path not found in config\n");
+		goto out;
+	}
+	char *cmd = YAJL_GET_STRING(v_cmd);
+
+	char *cmd_file_name = basename(cmd);
+	if (strcmp("init", cmd_file_name) && strcmp("systemd", cmd_file_name)) {
+		fprintf(stdout, "Skipping as container command is %s, not /sbin/init\n", cmd);
+		goto success;
+	}
 
 	if (!strcmp("prestart", argv[1])) {
 		if (prestart(rootfs, id, target_pid, mount_label) != 0) {
@@ -319,6 +331,7 @@ int main(int argc, char *argv[])
 		goto out;
 	}
 
+success:
 	ret = 0;
 out:
 	yajl_tree_free(node);
