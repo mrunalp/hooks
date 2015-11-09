@@ -220,7 +220,7 @@ int prestart(const char *rootfs,
 			goto out;
 		}
 
-		rc = dprintf(fd, "%.32s", id);
+		rc = dprintf(fd, "%.32s\n", id);
 		if (rc < 0) {
 			fprintf(stderr, "Failed to write id to %s\n", mid_path);
 			goto out;
