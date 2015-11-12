@@ -15,6 +15,7 @@
 #include <linux/limits.h>
 #include <selinux/selinux.h>
 #include <yajl/yajl_tree.h>
+#include <libmount.h>
 
 #include "config.h"
 
@@ -67,6 +68,49 @@ static int makepath(char *dir, mode_t mode)
     makepath(dirname(strdupa(dir)), mode);
 
     return mkdir(dir, mode);
+}
+
+DEFINE_CLEANUP_FUNC(struct libmnt_table*, mnt_free_table);
+DEFINE_CLEANUP_FUNC(struct libmnt_iter*, mnt_free_iter);
+static int mount_cgroups()
+{
+	_cleanup_(mnt_free_tablep) struct libmnt_table *t = NULL;
+        _cleanup_(mnt_free_iterp) struct libmnt_iter *i = NULL;
+        int ret = 0;
+
+        t = mnt_new_table();
+        if (!t)
+                return -1;
+
+        i = mnt_new_iter(MNT_ITER_FORWARD);
+        if (!i)
+                return -1;
+
+        ret = mnt_table_parse_mtab(t, NULL);
+        if (ret < 0) {
+                pr_perror("Failed to parse /proc/self/mountinfo");
+		return -1;
+	}
+
+        ret = 0;
+        for (;;) {
+                const char *path;
+                struct libmnt_fs *fs;
+                int rc;
+
+                rc = mnt_table_next_fs(t, i, &fs);
+                if (rc == 1)
+                        break;
+                if (rc < 0) {
+
+                        pr_perror("Failed to get next entry from /proc/self/mountinfo");
+			return -1;
+		}
+
+                path = mnt_fs_get_target(fs);
+        }
+
+        return ret;
 }
 
 bool contains_mount(const char **config_mounts, unsigned len, const char *mount) {
