@@ -156,9 +156,9 @@ int prestart(const char *rootfs,
 		}
 
 		if (!strcmp("", mount_label)) {
-			rc = asprintf(&options, "mode=1777,size=65536k");
+			rc = asprintf(&options, "mode=1777");
 		} else {
-			rc = asprintf(&options, "mode=1777,size=65536k,context=\"%s\"", mount_label);
+			rc = asprintf(&options, "mode=1777,context=\"%s\"", mount_label);
 		}
 		if (rc < 0) {
 			pr_perror("Failed to allocate memory for context");
