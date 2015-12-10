@@ -8,7 +8,7 @@
 
 Name: oci-systemd-hook
 Version: 0.1.3
-Release: 2%{?dist}
+Release: 3.git%{shortcommit0}%{?dist}
 Summary: OCI systemd hook for Docker
 License: GPLv3+
 URL: %{git0}
@@ -36,11 +36,20 @@ make %{?_smp_mflags}
 %make_install
 
 %files
+%if 0%{?fedora} >= 23
+%license LICENSE
+%else
+%doc LICENSE
+%doc README.md
+%endif
 %{_libexecdir}/docker/%{repo}.d/oci_systemd_hook
 %{_mandir}/man1/oci_systemd_hook.1*
-%doc README.md LICENSE
 
 %changelog
+* Thu Dec 10 2015 Lokesh Mandvekar <lsm5@fedoraproject.org> - 0.1.3-3.gitebdb622
+- use separate macro for license when fedora 23 or higher
+- update release tag when using git commits
+
 * Thu Dec 10 2015 Lokesh Mandvekar <lsm5@fedoraproject.org> - 0.1.3-2
 - spec file cleanup, resolve rpmlint errors
 - archful as per docker
