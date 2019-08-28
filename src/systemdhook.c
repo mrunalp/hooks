@@ -68,7 +68,7 @@ static char *get_file_contents(const char *path) {
 		return NULL;
 	}
 
-	char buffer[256];
+	char buffer[257];
 	size_t rd;
 	rd = read(fd, buffer, 256);
 	if (rd == -1) {
