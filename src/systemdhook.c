@@ -16,6 +16,7 @@
 #include <linux/limits.h>
 #include <selinux/selinux.h>
 #include <yajl/yajl_tree.h>
+#include <libmount.h>
 
 #include "config.h"
 
@@ -55,6 +56,7 @@ DEFINE_CLEANUP_FUNC(yajl_val, yajl_tree_free)
 
 #define BUFLEN 1024
 #define CONFIGSZ 65536
+#define CGROUP_ROOT "/sys/fs/cgroup"
 
 #define CGROUP_ROOT "/sys/fs/cgroup"
 
@@ -150,6 +152,86 @@ static int makepath(char *dir, mode_t mode)
     makepath(dirname(strdupa(dir)), mode);
 
     return mkdir(dir, mode);
+}
+
+static int mount_cgroup_path(const char *rootfs, const char* cgroup_path)
+{
+	char cont_cgroup_dir[PATH_MAX];
+	snprintf(cont_cgroup_dir, PATH_MAX, "%s/%s", rootfs, cgroup_path);
+
+	int ret = 0;
+	if (makepath(cont_cgroup_dir, 0755) == -1) {
+		if (errno != EEXIST) {
+			pr_perror("Failed to mkdir container cgroup dir %s", cgroup_path);
+			return -1;
+		}
+	}
+
+	pr_pinfo("Mounting %s at %s\n", cgroup_path, cont_cgroup_dir);
+	if (mount(cgroup_path, cont_cgroup_dir, "bind", MS_BIND, NULL) == -1) {
+		pr_perror("Failed to mount %s at %s", cgroup_path, cont_cgroup_dir);
+		return -1;
+	}
+
+	return ret;
+}
+
+DEFINE_CLEANUP_FUNC(struct libmnt_table*, mnt_free_table);
+DEFINE_CLEANUP_FUNC(struct libmnt_iter*, mnt_free_iter);
+static int mount_cgroups(const char *rootfs)
+{
+	_cleanup_(mnt_free_tablep) struct libmnt_table *t = NULL;
+        _cleanup_(mnt_free_iterp) struct libmnt_iter *i = NULL;
+        int ret = 0;
+
+        t = mnt_new_table();
+        if (!t)
+                return -1;
+
+        i = mnt_new_iter(MNT_ITER_FORWARD);
+        if (!i)
+                return -1;
+
+        ret = mnt_table_parse_mtab(t, NULL);
+        if (ret < 0) {
+                pr_perror("Failed to parse /proc/self/mountinfo");
+		return -1;
+	}
+
+        ret = 0;
+        for (;;) {
+                const char *path;
+                struct libmnt_fs *fs;
+                int rc;
+
+                rc = mnt_table_next_fs(t, i, &fs);
+                if (rc == 1)
+                        break;
+                if (rc < 0) {
+
+                        pr_perror("Failed to get next entry from /proc/self/mountinfo");
+			return -1;
+		}
+
+                path = mnt_fs_get_target(fs);
+
+		if (!strcmp(path, CGROUP_ROOT)) {
+			pr_pinfo("Skipping /sys/fs/cgroup");
+			continue;
+		}
+
+
+		if (!strncmp(path, CGROUP_ROOT, strlen(CGROUP_ROOT))) {
+			pr_pinfo("Found path: %s\n", path);
+			rc = mount_cgroup_path(rootfs, path);
+			if (rc < 0) {
+				pr_perror("Failed to mount %s");
+				return -1;
+			}
+		}
+        }
+
+        return ret;
 }
 
 bool contains_mount(const char **config_mounts, unsigned len, const char *mount) {
@@ -319,25 +401,30 @@ int prestart(const char *rootfs,
 		}
 	}
 
-#if 0
-	if (!contains_mount(config_mounts, config_mounts_len, "/sys/fs/cgroup")) {
-		char cont_cgroup_dir[PATH_MAX];
-		snprintf(cont_cgroup_dir, PATH_MAX, "%s/sys/fs/cgroup", rootfs);
+	char cgroup_dir[PATH_MAX];
+	snprintf(cgroup_dir, PATH_MAX, "%s/sys/fs/cgroup", rootfs);
 
-		if (makepath(cont_cgroup_dir, 0755) == -1) {
+	/* Create the /sys/fs/cgroup directory */
+	if (!contains_mount(config_mounts, config_mounts_len, "/sys/fs/cgroup")) {
+		if (makepath(cgroup_dir, 0755) == -1) {
 			if (errno != EEXIST) {
-				pr_perror("Failed to mkdir container cgroup dir");
-				goto out;
+				pr_perror("Failed to mkdir");
+				return -1;
 			}
 		}
 
-		/* Mount cgroup directory at /sys/fs/cgroup in the container */
-		if (mount("/sys/fs/cgroup", cont_cgroup_dir, "bind", MS_BIND|MS_REC, "ro") == -1) {
-			pr_perror("Failed to mount /sys/fs/cgroup at %s", cont_cgroup_dir);
-			goto out;
+		/* Mount tmpfs at /sys/fs/cgroup for systemd */
+		if (mount("tmpfs", cgroup_dir, "tmpfs", MS_NODEV|MS_NOSUID, "mode=755") == -1) {
+			pr_perror("Failed to mount tmpfs at /sys/fs/cgroup");
+			return -1;
+		}
+
+		if (mount_cgroups(rootfs) < 0) {
+			pr_perror("Failed to mount cgroups");
+			return -1;
 		}
 	}
-#endif
+
 	if (!contains_mount(config_mounts, config_mounts_len, "/etc/machine-id")) {
 		char mid_path[PATH_MAX];
 		snprintf(mid_path, PATH_MAX, "%s/etc/machine-id", rootfs);
